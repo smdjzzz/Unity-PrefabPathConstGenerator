@@ -127,8 +127,10 @@ namespace Tools.Editor
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("路径格式", EditorStyles.miniBoldLabel);
-            _useFullPath = GUILayout.Toggle(_useFullPath, "完整相对路径 (如: Prefabs/UI/MainPanel)");
-            _useFullPath = !GUILayout.Toggle(!_useFullPath, "仅预制体名称 (如: MainPanel)");
+            int pathFmtIdx = _useFullPath ? 0 : 1;
+            pathFmtIdx = GUILayout.SelectionGrid(pathFmtIdx,
+                new[] { "完整相对路径 (如: Prefabs/UI/MainPanel)", "仅预制体名称 (如: MainPanel)" }, 1);
+            _useFullPath = pathFmtIdx == 0;
 
             EditorGUILayout.Space(4);
         }
@@ -301,15 +303,18 @@ namespace Tools.Editor
                 if (!assetPath.EndsWith(".prefab")) continue;
 
                 string name = Path.GetFileNameWithoutExtension(assetPath);
-                // 计算相对于目标文件夹的路径（去掉扩展名）
+                // 完整相对路径：相对于 Assets/，去掉 .prefab 扩展名
                 string relativePath = assetPath;
-                if (assetPath.StartsWith(folderPath))
-                {
-                    relativePath = assetPath.Substring(folderPath.Length).TrimStart('/');
-                }
-                // 去掉 .prefab 扩展名
+                if (relativePath.StartsWith("Assets/"))
+                    relativePath = relativePath.Substring("Assets/".Length);
                 if (relativePath.EndsWith(".prefab"))
                     relativePath = relativePath.Substring(0, relativePath.Length - ".prefab".Length);
+                // 去掉 Resources/ 或 Resource/ 前缀（不区分大小写，Resources.Load 不需要该前缀）
+                if (relativePath.StartsWith("Resources/", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    int slashIdx = relativePath.IndexOf('/');
+                    relativePath = relativePath.Substring(slashIdx + 1);
+                }
 
                 _prefabEntries.Add(new PrefabEntry
                 {
@@ -401,7 +406,7 @@ namespace Tools.Editor
             // 第一遍：统计名称出现次数
             foreach (var entry in entries)
             {
-                string constName = ToConstName(_useFullPath ? entry.RelativePath : entry.Name);
+                string constName = ToConstName(entry.Name);
                 if (nameCounts.ContainsKey(constName))
                     nameCounts[constName]++;
                 else
@@ -414,8 +419,7 @@ namespace Tools.Editor
             // 先计算最长名称用于对齐
             foreach (var entry in entries)
             {
-                string constName = GetUniqueConstName(
-                    _useFullPath ? entry.RelativePath : entry.Name, nameCounts, usedNames);
+                string constName = GetUniqueConstName(entry.Name, nameCounts, usedNames);
                 if (constName.Length > maxLen) maxLen = constName.Length;
             }
 
@@ -426,12 +430,10 @@ namespace Tools.Editor
             {
                 var entry = entries[i];
                 string value = _useFullPath ? entry.RelativePath : entry.Name;
-                string constName = GetUniqueConstName(
-                    _useFullPath ? entry.RelativePath : entry.Name, nameCounts, usedNames);
+                string constName = GetUniqueConstName(entry.Name, nameCounts, usedNames);
 
                 // 对齐等号
                 string padding = new string(' ', maxLen - constName.Length);
-                string lineEnd = (i < entries.Count - 1) ? "" : "";
                 sb.AppendLine($"    public const string {constName} {padding}= \"{value}\";");
             }
 
